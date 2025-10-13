@@ -1,4 +1,5 @@
 Latency currently has a average of less than a second, but will be improved in the future.
+Currently a few corrupted characters in text fields but doesnt effect function
 
 Dependencies:
 
