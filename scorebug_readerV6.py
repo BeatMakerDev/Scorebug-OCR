@@ -41,7 +41,7 @@ Test mode
     python scorebug_reader.py --test-image "/path/to/image.png"
 You can draw ROIs on the still image and run the same pipelines.
 
-Author: ChatGPT - GPT-5 Thinking Agent
+Author: ChatGPT - GPT-5 Thinking
 Direction: James Cromwell
 License: MIT
 """
@@ -92,7 +92,7 @@ def _atomic_replace(tmp: str, path: str, retries: int = 3, delay: float = 0.05):
             # transient lock; wait and retry
             time.sleep(delay)
         except Exception as ex:
-            # unexpected error — try once to copy as fallback
+            # unexpected error - try once to copy as fallback
             try:
                 with open(tmp, "rb") as fr, open(path, "wb") as fw:
                     fw.write(fr.read())
@@ -277,6 +277,13 @@ class ROIConfig:
     # checkbutton in the play clock tab of the UI and persists in saved
     # profiles.
     debloom: bool = False
+    # Use seven-segment decoding for the game clock.  When enabled, the game
+    # clock is assumed to be displayed using four 7-segment digits (M:SS)
+    # rather than a digital font.  The reading algorithm will employ
+    # morphological clean-up and template matching to decode the minutes
+    # and seconds from the segments.  This setting can be toggled in the
+    # GAME controls panel and is persisted in saved profiles.
+    game_seven_seg: bool = False
 
 @dataclass
 class ROIState:
@@ -438,6 +445,17 @@ def tesseract_read(gray_or_bin: np.ndarray, whitelist="0123456789:", psm=7) -> s
     return txt.strip().replace(" ", "")
 
 def read_game_clock(gray: np.ndarray, binimg: np.ndarray, cfg: ROIConfig) -> str:
+    """Read the game clock and return a string M:SS or empty on failure.
+
+    When the game configuration requests seven-segment decoding, this
+    function delegates to a specialised routine that assumes the clock
+    consists of four 7-segment digits (M:SS).  Otherwise, it falls
+    back to a Tesseract + template-based pipeline to handle digital
+    fonts or other non-segmented displays.
+    """
+    # If configured for 7-segment game display, use the dedicated reader
+    if getattr(cfg, "game_seven_seg", False):
+        return read_game_clock_7seg(gray, binimg, cfg)
     # Prefer white-on-black -> invert if needed to make digits white
     inv = binimg
     # Heuristic: if background mostly white, invert
@@ -449,27 +467,84 @@ def read_game_clock(gray: np.ndarray, binimg: np.ndarray, cfg: ROIConfig) -> str
         # Basic cleanup
         s = s.replace("::", ":").replace("—", "-")
         # normalize MM:SS or M:SS
-        if len(s)>=3 and ":" in s:
+        if len(s) >= 3 and ":" in s:
             parts = s.split(":")
-            if len(parts)==2 and all(p.isdigit() for p in parts):
+            if len(parts) == 2 and all(p.isdigit() for p in parts):
                 m, sec = parts
-                if len(sec)==1: sec = "0"+sec
+                if len(sec) == 1:
+                    sec = "0" + sec
                 return f"{int(m)}:{sec[:2]}"
     # Fallback to template/NCC
     if cfg.template_fallback:
         s = template_ncc_fallback(inv)
         s = s.replace("::", ":")
         if ":" in s:
-            chunks = [c for c in s if c.isdigit() or c==":"]
+            chunks = [c for c in s if c.isdigit() or c == ":"]
             s = "".join(chunks)
             # Try to coerce to M:SS
             if ":" in s:
                 p = s.split(":")
-                if len(p)>=2 and all(x.isdigit() for x in p[:2]):
+                if len(p) >= 2 and all(x.isdigit() for x in p[:2]):
                     m = str(int(p[0]))
-                    sec = p[1].ljust(2,"0")[:2]
+                    sec = p[1].ljust(2, "0")[:2]
                     return f"{m}:{sec}"
     return ""
+
+def read_game_clock_7seg(gray: np.ndarray, binimg: np.ndarray, cfg: ROIConfig) -> str:
+    """
+    Decode a four-digit seven-segment game clock (M:SS).  The clock is
+    assumed to be rendered as four adjacent 7-segment digits with an
+    implied colon between the minute and second pairs.  This function
+    performs basic morphological clean-up, optional inversion and then
+    template-based matching to extract up to four digits.  The result is
+    formatted as M:SS.  If decoding fails or yields an invalid time (e.g.
+    seconds >= 60), an empty string is returned.
+    """
+    # Work on a copy of the binary mask
+    clean = binimg.copy()
+    # Remove small holes and fill gaps between segments
+    kernel = np.ones((3, 3), np.uint8)
+    clean = cv2.morphologyEx(clean, cv2.MORPH_CLOSE, kernel, iterations=2)
+    clean = cv2.morphologyEx(clean, cv2.MORPH_OPEN, kernel, iterations=1)
+    # Invert if necessary so that segments are white on black
+    if np.mean(clean) > 127:
+        clean = 255 - clean
+    # Use the generic template matcher to detect up to 4 digits and colons
+    s = template_ncc_fallback(clean)
+    if not s:
+        return ""
+    # Remove duplicate colons and keep only digits and colon
+    s = s.replace("::", ":")
+    # If there is a colon present in the output, use it to split minutes/seconds
+    if ":" in s and all(ch.isdigit() or ch == ":" for ch in s):
+        parts = s.split(":")
+        if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+            m = int(parts[0])
+            ss = parts[1][:2].rjust(2, "0")
+            try:
+                si = int(ss)
+            except Exception:
+                return ""
+            if 0 <= si < 60 and m >= 0:
+                return f"{m}:{ss}"
+    # Otherwise, infer minutes/seconds from the digits sequence
+    digits = [c for c in s if c.isdigit()]
+    if len(digits) >= 3:
+        minutes = "".join(digits[:-2])
+        seconds = "".join(digits[-2:])
+    elif len(digits) == 2:
+        minutes = "0"
+        seconds = "".join(digits)
+    else:
+        return ""
+    try:
+        m = int(minutes)
+        si = int(seconds)
+    except Exception:
+        return ""
+    if si >= 60 or m < 0:
+        return ""
+    return f"{m}:{si:02d}"
 
 def read_play_clock(gray: np.ndarray, binimg: np.ndarray, cfg: ROIConfig) -> str:
     """Read the play clock using a robust seven-segment pipeline with fallbacks.
@@ -642,7 +717,7 @@ class App:
         ttk.Button(top, text="Initialize Input", command=self.init_input).pack(side="left", padx=6)
         ttk.Spinbox(top, from_=0, to=9, textvariable=self.camera_index, width=3).pack(side="left", padx=6)
         ttk.Button(top, text="Start", command=self.on_start).pack(side="left", padx=6)
-        # Pause/Resume button – store a reference so we can update its label
+        # Pause/Resume button - store a reference so we can update its label
         # dynamically when paused or resumed.  The label is initially
         # "Pause (Space)" because capture starts only after initialisation.
         self.btn_pause = ttk.Button(top, text="Pause (Space)", command=self.toggle_pause)
@@ -717,6 +792,17 @@ class App:
             self.play_cfg.debloom = self.var_play_debloom.get()
         ttk.Checkbutton(container, text="PLAY: Debloom (far)", variable=self.var_play_debloom, command=on_debloom_change).pack(anchor="w")
 
+        # 7-segment toggle for GAME.  When enabled, the game clock is
+        # assumed to be displayed using four 7-segment digits (M:SS)
+        # rather than a digital font.  This activates a specialised
+        # decoding pipeline that operates similarly to the play clock but
+        # returns an M:SS string.  Changing this toggle updates
+        # self.game_cfg.game_seven_seg immediately.
+        self.var_game_7seg = tk.BooleanVar(value=getattr(self.game_cfg, 'game_seven_seg', False))
+        def on_game_7seg_change():
+            self.game_cfg.game_seven_seg = self.var_game_7seg.get()
+        ttk.Checkbutton(container, text="GAME: 7-segment (M:SS)", variable=self.var_game_7seg, command=on_game_7seg_change).pack(anchor="w")
+
         # Preprocess sliders grouped
         def add_slider(label, var_from, var_to, init, step, setter):
             frm = ttk.Frame(container); frm.pack(fill="x", pady=2)
@@ -758,7 +844,7 @@ class App:
         ttk.Scale(frm_m, from_=1, to=7, variable=self.var_close, orient="horizontal",
                   command=lambda e: self._set_cfg("morph_close", int(self.var_close.get()))).pack(side="left", fill="x", expand=True, padx=6)
 
-        # Calibration controls – embed expected value input and run button.  The user types
+        # Calibration controls - embed expected value input and run button.  The user types
         # the expected clock value here and either clicks "Run Auto-Cal" or presses
         # the 'a' key to start calibration. This avoids modal dialogs and provides
         # better feedback during the calibration process.
@@ -939,7 +1025,7 @@ class App:
                     # Build new controls in the same parent
                     self.controls = self._build_controls(parent)
             except Exception:
-                # If rebuilding fails, ignore – UI may not reflect loaded values
+                # If rebuilding fails, ignore - UI may not reflect loaded values
                 pass
             self.status.set(f"Profile loaded from {path}")
         except Exception as e:
@@ -1396,6 +1482,13 @@ class App:
                                 if new_n in {60, 45, 40, 35, 30, 25} and (new_n - last_n) >= 5:
                                     accept = True
                             # Otherwise accept remains False, rejecting noise or large spikes
+                    # Additional protection: if the difference is large, check whether the clock is covered
+                    if accept and new_n is not None and last_n is not None:
+                        if abs(new_n - last_n) > 5:
+                            # Compute white pixel ratio to detect occlusion
+                            ratio = float(np.mean(binimg > 0))
+                            if ratio < 0.02 or ratio > 0.60:
+                                accept = False
                     # If accepted, update history and last value; otherwise retain the last value
                     if accept and new_n is not None:
                         val_str = f"{new_n:02d}"
@@ -1405,7 +1498,7 @@ class App:
                     else:
                         # hold the previous value if we reject this update
                         play_val = self.play_state.last_value or play_val
-            # Guards: game should count down or hold; play 40->39 or 25->24 etc (lightweight – not enforced hard)
+            # Guards: game should count down or hold; play 40->39 or 25->24 etc (lightweight - not enforced hard)
 
             self.lbl_now.config(text=f"GAME: {game_val:>5}    PLAY: {play_val:>2}")
             # Write outputs at ~10 Hz
@@ -1441,7 +1534,7 @@ def main():
     args = parser.parse_args()
 
     if HAVE_TESS:
-        # nothing – user can override through UI
+        # nothing - user can override through UI
         pass
 
     root = tk.Tk()
