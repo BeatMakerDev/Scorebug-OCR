@@ -1,47 +1,47 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Scorebug Reader â€“ Broadcast OCR for Game Clock + Play Clock
+Scorebug Reader - Broadcast OCR for Game Clock + Play Clock
 ===========================================================
 Dependencies (install first):
     pip install opencv-python pillow mss pytesseract numpy
 
 What it does
 ------------
-â€¢ Capture from a screen region (MSS) or camera (OpenCV), default canvas 1920Ã—1080.
-â€¢ Tk/ttk UI with 16:9 live viewer, perâ€‘ROI (GAME / PLAY) controls in a scrollable panel.
-â€¢ Draw two independent ROIs (left-click drag). Toggle target via radio buttons.
-â€¢ Multiple OCR pipelines:
+* Capture from a screen region (MSS) or camera (OpenCV), default canvas 1920x1080.
+* Tk/ttk UI with 16:9 live viewer, per-ROI (GAME / PLAY) controls in a scrollable panel.
+* Draw two independent ROIs (left-click drag). Toggle target via radio buttons.
+* Multiple OCR pipelines:
     (a) Digital clock pipeline (M:SS) for white/bright glyphs on dark.
-    (b) Sevenâ€‘segment pipeline for PLAY clock (two digits).
-    (c) Legacy redâ€‘LED method via HSV red masking (+ morphology).
+    (b) Seven-segment pipeline for PLAY clock (two digits).
+    (c) Legacy red-LED method via HSV red masking (+ morphology).
     (d) Template/NCC fallback using generated digit templates.
     (e) Tesseract fallback (digit/colon whitelist, PSM 7).
-â€¢ Projectionâ€‘based splitter to separate merged digits.
-â€¢ Autoâ€‘calibration sweep that searches parameter combos to match the operatorâ€™s â€œground truthâ€ entry.
-â€¢ Reliability: median smoothing, jump/countdown guards, threaded capture+OCR.
-â€¢ Atomic TXT/JSON/CSV writers compatible with OBS text source â€œRead from fileâ€.
+* Projection-based splitter to separate merged digits.
+* Auto-calibration sweep that searches parameter combinations to match the operator's "ground truth" entry.
+* Reliability: median smoothing, jump/countdown guards, threaded capture+OCR.
+* Atomic TXT/JSON/CSV writers compatible with OBS text source "Read from file".
 
 Quick start
 -----------
 1) Run:  python scorebug_reader.py
-2) Pick â€œScreenâ€ or â€œCameraâ€. For Screen, press â€œPick Regionâ€ to set a capture box.
+2) Pick "Screen" or "Camera". For Screen, press "Pick Region" to set a capture box.
 3) Select GAME or PLAY, then draw an ROI on the viewer. Repeat for the other clock.
-4) (Optional) Set Tesseract path (â€¦/tesseract.exe on Windows).
-5) Click â€œStartâ€. OCR results appear at top; files write to ./out by default.
+4) (Optional) Set the Tesseract path (.../tesseract.exe on Windows).
+5) Click "Start". OCR results appear at the top; files write to ./out by default.
 
 Tips
 ----
-â€¢ Press â€œSpaceâ€ to pause/resume preview. Mouse wheel zooms (preview only).
-â€¢ Rightâ€‘click clears the active ROI. â€˜aâ€™ triggers autoâ€‘cal for the active ROI.
-â€¢ If your play clock is red LEDs, enable â€œLegacy Red LEDâ€ for PLAY.
+* Press "Space" to pause/resume preview. Mouse wheel zooms (preview only).
+* Right-click clears the active ROI. 'a' triggers auto-cal for the active ROI.
+* If your play clock is red LEDs, enable "Legacy Red LED" for PLAY.
 
 Test mode
 ---------
     python scorebug_reader.py --test-image "/path/to/image.png"
 You can draw ROIs on the still image and run the same pipelines.
 
-Author: ChatGPT â€“ GPTâ€‘5 Thinking
+Author: ChatGPT - GPT-5 Thinking Agent
 Direction: James Cromwell
 License: MIT
 """
@@ -92,7 +92,7 @@ def _atomic_replace(tmp: str, path: str, retries: int = 3, delay: float = 0.05):
             # transient lock; wait and retry
             time.sleep(delay)
         except Exception as ex:
-            # unexpected error â€” try once to copy as fallback
+            # unexpected error — try once to copy as fallback
             try:
                 with open(tmp, "rb") as fr, open(path, "wb") as fw:
                     fw.write(fr.read())
@@ -306,7 +306,7 @@ def apply_preprocess(img: np.ndarray, cfg: ROIConfig) -> Tuple[np.ndarray, np.nd
     # contrast/brightness
     adj = cv2.convertScaleAbs(adj, alpha=float(cfg.contrast), beta=int(cfg.brightness))
     gray = cv2.cvtColor(adj, cv2.COLOR_BGR2GRAY)
-    # Apply a small median filter to reduce saltâ€‘andâ€‘pepper noise.  A 3Ã—3 kernel
+    # Apply a small median filter to reduce salt-and-pepper noise.  A 3x3 kernel
     # removes isolated bright/dark pixels while preserving segment edges.  This
     # helps the OCR remain robust on noisy broadcast feeds without adding much
     # latency.  We perform this before sharpening so that the unsharp mask
@@ -447,7 +447,7 @@ def read_game_clock(gray: np.ndarray, binimg: np.ndarray, cfg: ROIConfig) -> str
     if cfg.use_tesseract and HAVE_TESS:
         s = tesseract_read(inv, whitelist="0123456789:", psm=7)
         # Basic cleanup
-        s = s.replace("::", ":").replace("â€”", "-")
+        s = s.replace("::", ":").replace("—", "-")
         # normalize MM:SS or M:SS
         if len(s)>=3 and ":" in s:
             parts = s.split(":")
@@ -472,11 +472,11 @@ def read_game_clock(gray: np.ndarray, binimg: np.ndarray, cfg: ROIConfig) -> str
     return ""
 
 def read_play_clock(gray: np.ndarray, binimg: np.ndarray, cfg: ROIConfig) -> str:
-    """Read the play clock using a robust sevenâ€‘segment pipeline with fallbacks.
+    """Read the play clock using a robust seven-segment pipeline with fallbacks.
 
-    The play clock is typically displayed as a twoâ€‘digit sevenâ€‘segment LED/LCD. We
-    perform morphological cleanâ€‘up and optional inversion to normalise the
-    binary mask before applying the sevenâ€‘segment reader. If that fails, we
+    The play clock is typically displayed as a two-digit seven-segment LED/LCD. We
+    perform morphological clean-up and optional inversion to normalise the
+    binary mask before applying the seven-segment reader. If that fails, we
     fall back to Tesseract OCR and template matching.
     """
     # For legacy red LED displays, the mask is already the red channel threshold.
@@ -492,30 +492,49 @@ def read_play_clock(gray: np.ndarray, binimg: np.ndarray, cfg: ROIConfig) -> str
         # Invert if the background is mostly white so digits become white on black
         if np.mean(clean) > 127:
             clean = 255 - clean
-    # Apply optional deblooming step: additional morphological open with a
+    # Apply optional deblooming step: an additional morphological open with a
     # larger kernel to separate merged segments caused by optical bloom when
     # the play clock is distant or blurred.  This runs only when the
-    # `debloom` flag is set in the play configuration.  The 5Ã—5 kernel
+    # `debloom` flag is set in the play configuration.  The 5x5 kernel
     # reduces thick bridges between segments without erasing the digits.
     if cfg.debloom:
         debloom_kernel = np.ones((5, 5), np.uint8)
         clean = cv2.morphologyEx(clean, cv2.MORPH_OPEN, debloom_kernel, iterations=1)
-    # Primary attempt: sevenâ€‘segment decode
+    # Primary attempt: seven-segment decode
     s = seven_seg_read(clean)
+    # The play clock should always be exactly two digits. Convert the
+    # seven-segment output to an integer and clamp it to the range 0..60. If
+    # the decoded value is outside this range, return an empty string to
+    # indicate a failed read.  Zero-pad the result to preserve two digits.
     if len(s) == 2 and s.isdigit():
-        return s
+        try:
+            n = int(s)
+        except Exception:
+            n = None
+        if n is not None and 0 <= n <= 60:
+            return f"{n:02d}"
     # Fallback: Tesseract OCR restricted to digits
     if cfg.use_tesseract and HAVE_TESS:
         s2 = tesseract_read(clean, whitelist="0123456789", psm=7)
         digits = ''.join([c for c in s2 if c.isdigit()])
         if len(digits) >= 1:
-            return digits[:2].rjust(2, "0")
+            try:
+                n = int(digits[:2])
+            except Exception:
+                n = None
+            if n is not None and 0 <= n <= 60:
+                return f"{n:02d}"
     # Final fallback: template matching
     if cfg.template_fallback:
         s3 = template_ncc_fallback(clean)
         digits_only = ''.join([c for c in s3 if c.isdigit()])
-        if len(digits_only) >= 2:
-            return digits_only[:2]
+        if len(digits_only) >= 1:
+            try:
+                n = int(digits_only[:2])
+            except Exception:
+                n = None
+            if n is not None and 0 <= n <= 60:
+                return f"{n:02d}"
     return ""
 
 # ---------------------------- Auto Calibration ----------------------------
@@ -533,7 +552,7 @@ def score_candidate(text: str, expected: str, expected_len: int) -> float:
     return score
 
 def auto_calibrate(sample_bgr: np.ndarray, cfg: ROIConfig, kind: str, expected: str) -> ROIConfig:
-    """Gridâ€‘search a few parameter combos to fit expected text quickly."""
+    """Grid-search a few parameter combos to fit expected text quickly."""
     best_cfg = None
     best_score = -1e9
     # Parameter ranges (kept small for speed)
@@ -568,7 +587,8 @@ def auto_calibrate(sample_bgr: np.ndarray, cfg: ROIConfig, kind: str, expected: 
 class App:
     def __init__(self, root, args):
         self.root = root
-        root.title("Scorebug Reader â€“ Game/Play Clock OCR")
+        # Use a simple ASCII hyphen in the window title to avoid encoding issues
+        root.title("Scorebug Reader - Game/Play Clock OCR")
         self.args = args
 
         self.capture_mode = tk.StringVar(value="screen" if HAVE_MSS else "camera")
@@ -622,13 +642,14 @@ class App:
         ttk.Button(top, text="Initialize Input", command=self.init_input).pack(side="left", padx=6)
         ttk.Spinbox(top, from_=0, to=9, textvariable=self.camera_index, width=3).pack(side="left", padx=6)
         ttk.Button(top, text="Start", command=self.on_start).pack(side="left", padx=6)
-        # Pause/Resume button â€“ store a reference so we can update its label
+        # Pause/Resume button – store a reference so we can update its label
         # dynamically when paused or resumed.  The label is initially
         # "Pause (Space)" because capture starts only after initialisation.
         self.btn_pause = ttk.Button(top, text="Pause (Space)", command=self.toggle_pause)
         self.btn_pause.pack(side="left", padx=6)
-        ttk.Button(top, text="Set Tesseractâ€¦", command=self.pick_tesseract).pack(side="left", padx=6)
-        ttk.Button(top, text="Output Dirâ€¦", command=self.pick_outdir).pack(side="left", padx=6)
+        # Use plain dots instead of misencoded ellipsis for button labels
+        ttk.Button(top, text="Set Tesseract...", command=self.pick_tesseract).pack(side="left", padx=6)
+        ttk.Button(top, text="Output Dir...", command=self.pick_outdir).pack(side="left", padx=6)
 
         # Profile save/load buttons. These allow the operator to persist
         # the entire capture/ROI configuration (including gamma, contrast,
@@ -637,8 +658,8 @@ class App:
         # to a JSON file. A saved profile can later be reloaded to
         # immediately restore a previously tuned setup. The buttons are
         # placed on the top bar for easy access during setup.
-        ttk.Button(top, text="Save Profileâ€¦", command=self.save_profile).pack(side="left", padx=6)
-        ttk.Button(top, text="Load Profileâ€¦", command=self.load_profile).pack(side="left", padx=6)
+        ttk.Button(top, text="Save Profile...", command=self.save_profile).pack(side="left", padx=6)
+        ttk.Button(top, text="Load Profile...", command=self.load_profile).pack(side="left", padx=6)
         # Output format selector.  Allows the operator to choose whether to
         # write the clock values as plain text, JSON, or CSV.  Each value
         # will be written to its own file (game.<fmt>, play.<fmt>).  The
@@ -737,18 +758,18 @@ class App:
         ttk.Scale(frm_m, from_=1, to=7, variable=self.var_close, orient="horizontal",
                   command=lambda e: self._set_cfg("morph_close", int(self.var_close.get()))).pack(side="left", fill="x", expand=True, padx=6)
 
-        # Calibration controls â€“ embed expected value input and run button.  The user types
-        # the expected clock value here and either clicks â€œRun Autoâ€‘Calâ€ or presses
+        # Calibration controls – embed expected value input and run button.  The user types
+        # the expected clock value here and either clicks "Run Auto-Cal" or presses
         # the 'a' key to start calibration. This avoids modal dialogs and provides
         # better feedback during the calibration process.
         ttk.Separator(container).pack(fill="x", pady=6)
-        ttk.Label(container, text="Autoâ€‘Cal (expected value)").pack(anchor="w")
+        ttk.Label(container, text="Auto-Cal (expected value)").pack(anchor="w")
         self.var_calib_expected = tk.StringVar(value="")
         self.entry_calib = ttk.Entry(container, textvariable=self.var_calib_expected)
         self.entry_calib.pack(fill="x")
-        ttk.Button(container, text="Run Autoâ€‘Cal", command=self.on_autocal_from_entry).pack(fill="x", pady=3)
+        ttk.Button(container, text="Run Auto-Cal", command=self.on_autocal_from_entry).pack(fill="x", pady=3)
         # ROI clearing controls
-        ttk.Button(container, text="Clear Active ROI (rightâ€‘click)", command=self.clear_active_roi).pack(fill="x", pady=(6,0))
+        ttk.Button(container, text="Clear Active ROI (right-click)", command=self.clear_active_roi).pack(fill="x", pady=(6,0))
         ttk.Button(container, text="Reset All ROIs", command=self.clear_all_rois).pack(fill="x")
         return container
 
@@ -773,7 +794,7 @@ class App:
         sw = picker.winfo_screenwidth()
         sh = picker.winfo_screenheight()
 
-        # Draw on a Canvas (Toplevel itself canâ€™t draw)
+        # Draw on a Canvas (Toplevel itself can't draw)
         canv = tk.Canvas(picker, bg="gray", highlightthickness=0, cursor="crosshair",
                         width=sw, height=sh)
         canv.pack(fill="both", expand=True)
@@ -826,7 +847,7 @@ class App:
         """
         Save the current application settings to a JSON file.  This includes
         capture mode (screen/camera) and camera index, screen capture box,
-        tesseract executable path, output directory, the perâ€‘ROI configuration
+        tesseract executable path, output directory, the per-ROI configuration
         parameters (gamma, contrast, brightness, threshold settings, morphological
         options, expected length, etc.), and the coordinates of each ROI.  The
         resulting JSON can be loaded later to restore the identical setup.
@@ -863,7 +884,7 @@ class App:
         """
         Load application settings from a previously saved profile JSON.  This will
         restore capture mode, camera index, screen box, tesseract path, output
-        directory, perâ€‘ROI configuration, and ROI coordinates.  After loading,
+        directory, per-ROI configuration, and ROI coordinates.  After loading,
         the controls pane is rebuilt to reflect the new configuration values.
         """
         path = filedialog.askopenfilename(
@@ -918,7 +939,7 @@ class App:
                     # Build new controls in the same parent
                     self.controls = self._build_controls(parent)
             except Exception:
-                # If rebuilding fails, ignore â€“ UI may not reflect loaded values
+                # If rebuilding fails, ignore – UI may not reflect loaded values
                 pass
             self.status.set(f"Profile loaded from {path}")
         except Exception as e:
@@ -938,7 +959,8 @@ class App:
         if getattr(self, 'threads_started', False):
             # Unpause and update status
             self.paused = False
-            self.status.set("Capturingâ€¦")
+            # Update status with plain dots instead of misencoded ellipsis
+            self.status.set("Capturing...")
             try:
                 self.btn_pause.config(text="Pause (Space)")
             except Exception:
@@ -955,7 +977,8 @@ class App:
         self._start_threads()
         self.threads_started = True
         self.paused = False
-        self.status.set("Capturingâ€¦")
+        # Indicate that capture has started
+        self.status.set("Capturing...")
         # Update pause button label to "Pause"
         try:
             self.btn_pause.config(text="Pause (Space)")
@@ -1015,11 +1038,11 @@ class App:
         self.clear_active_roi()
 
     def on_autocal(self):
-        """Keybinding for Autoâ€‘Cal (pressing 'a'). Use entry field for expected value."""
+        """Keybinding for Auto-Cal (pressing 'a'). Use entry field for the expected value."""
         self.on_autocal_from_entry()
 
     def on_autocal_from_entry(self):
-        """Perform autoâ€‘calibration using the value from the calibration entry with debug info.
+        """Perform auto-calibration using the value from the calibration entry with debug info.
 
         This function reads the expected clock value from the input field, checks that a
         frame and ROI are available, then performs a parameter sweep to calibrate
@@ -1046,7 +1069,8 @@ class App:
             self.status.set("Auto-Cal: enter expected value before calibrating.")
             return
         # Inform user that calibration is starting
-        self.status.set(f"Auto-Cal: calibrating {target} (expected {expected})â€¦")
+        # Inform user that calibration is starting (use plain dots)
+        self.status.set(f"Auto-Cal: calibrating {target} (expected {expected})...")
         # Force UI to update so message appears before blocking operations
         self.root.update_idletasks()
         # Extract ROI crop
@@ -1339,16 +1363,49 @@ class App:
                 # If val is empty we do nothing (retain previous game_val)
             # PLAY
             if self.play_state.rect:
-                x,y,w,h = self.play_state.rect
+                x, y, w, h = self.play_state.rect
                 crop = frame[y:y+h, x:x+w]
                 gray, binimg = apply_preprocess(crop, self.play_cfg)
                 val = read_play_clock(gray, binimg, self.play_cfg)
                 if val:
-                    # update history and last value for play clock
-                    self.play_state.history.append(val)
-                    self.play_state.last_value = val
-                    play_val = median_smooth(self.play_state.history, k=3)
-            # Guards: game should count down or hold; play 40->39 or 25->24 etc (lightweight â€“ not enforced hard)
+                    # Convert the OCR string to an integer for range and jump checks
+                    try:
+                        new_n = int(val)
+                    except Exception:
+                        new_n = None
+                    # Retrieve the previous accepted value as an integer if available
+                    last_txt = self.play_state.last_value
+                    last_n = None
+                    if last_txt and last_txt.isdigit():
+                        try:
+                            last_n = int(last_txt)
+                        except Exception:
+                            last_n = None
+                    accept = False
+                    if new_n is not None:
+                        # If there's no previous value, accept the first reading
+                        if last_n is None:
+                            accept = True
+                        else:
+                            diff = new_n - last_n
+                            # Normal countdown: same value or decrement by one or two seconds
+                            if diff == 0 or diff == -1 or diff == -2:
+                                accept = True
+                            elif diff > 0:
+                                # Treat increases as official resets if the new value is a typical reset and the jump is at least 5 seconds
+                                if new_n in {60, 45, 40, 35, 30, 25} and (new_n - last_n) >= 5:
+                                    accept = True
+                            # Otherwise accept remains False, rejecting noise or large spikes
+                    # If accepted, update history and last value; otherwise retain the last value
+                    if accept and new_n is not None:
+                        val_str = f"{new_n:02d}"
+                        self.play_state.history.append(val_str)
+                        self.play_state.last_value = val_str
+                        play_val = median_smooth(self.play_state.history, k=3)
+                    else:
+                        # hold the previous value if we reject this update
+                        play_val = self.play_state.last_value or play_val
+            # Guards: game should count down or hold; play 40->39 or 25->24 etc (lightweight – not enforced hard)
 
             self.lbl_now.config(text=f"GAME: {game_val:>5}    PLAY: {play_val:>2}")
             # Write outputs at ~10 Hz
@@ -1384,7 +1441,7 @@ def main():
     args = parser.parse_args()
 
     if HAVE_TESS:
-        # nothing â€“ user can override through UI
+        # nothing – user can override through UI
         pass
 
     root = tk.Tk()

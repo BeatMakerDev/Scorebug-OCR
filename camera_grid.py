@@ -17,10 +17,10 @@ Usage:
 Press 'q' in the window to exit and release all cameras.
 
 Note:
-    The script attempts to open camera indices from 0 up to MAX_CAMS-1. If
-    you have more than MAX_CAMS cameras, increase the MAX_CAMS constant. On
-    some systems, trying to open indices that don't exist may cause a slight
-    delay; this is normal. Only successfully opened cameras will be used.
+    When the program starts it prompts you to enter how many camera indices to probe,
+    opening cameras from 0 up to that number minus one.  Only successfully opened
+    cameras will be used.  On some systems, attempting to open indices that don't
+    exist may cause a slight delay; this is normal.
 
 Author: ChatGPT – GPT-5 Thinking
 License: MIT
@@ -29,6 +29,16 @@ License: MIT
 import cv2
 import math
 import numpy as np
+
+# For the initial camera-count prompt we use a simple Tkinter dialog.  If Tkinter
+# is unavailable (e.g. on headless systems), the program will fall back to
+# reading from standard input.
+try:
+    import tkinter as tk  # type: ignore
+    from tkinter import simpledialog  # type: ignore
+    HAVE_TK = True
+except Exception:
+    HAVE_TK = False
 
 
 def enumerate_cameras(max_cams: int = 10):
@@ -76,9 +86,44 @@ def draw_label(frame, text: str):
 
 
 def main():
-    # Adjust this constant if you expect more than 10 cameras.
-    MAX_CAMS = 10
-    cams = enumerate_cameras(MAX_CAMS)
+    # Prompt the user for how many camera indices to probe.  We attempt to
+    # display a small GUI input dialog using Tkinter.  If Tk is not
+    # available or the user cancels/closes the dialog, we fall back to a
+    # console prompt or a default value.  The value entered here
+    # determines the upper bound of indices we will attempt to open.
+    max_cams = 10  # sensible default
+    if HAVE_TK:
+        try:
+            # Create a hidden root window to host the dialog
+            root = tk.Tk()
+            root.withdraw()
+            # Ask for an integer ≥ 1
+            num = simpledialog.askinteger(
+                title="Camera Count",
+                prompt="Enter number of cameras to open (indices 0..N-1):",
+                initialvalue=max_cams,
+                minvalue=1,
+            )
+            # Destroy the root regardless of result
+            root.destroy()
+            if num is not None and num > 0:
+                max_cams = int(num)
+        except Exception:
+            # Silently ignore any errors and proceed to fallback
+            pass
+    if not HAVE_TK or 'num' not in locals():
+        try:
+            # Fallback: ask via console input if interactive
+            entered = input(
+                "Enter number of cameras to open (press Enter for default 10): "
+            )
+            if entered.strip():
+                max_cams = max(1, int(entered.strip()))
+        except Exception:
+            # On error or non-interactive sessions, keep default
+            pass
+
+    cams = enumerate_cameras(max_cams)
     if not cams:
         print("No cameras found.")
         return
